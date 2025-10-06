@@ -24,97 +24,148 @@
             justify-content: flex-start;
             align-items: center;
             padding-top: 20px;
-            pointer-events: none; /* Allows clicks to pass through to the AR scene */
+            pointer-events: none;
             z-index: 100;
             text-shadow: 1px 1px 2px black;
         }
 
-        h1 {
+        #left-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 300px; /* Adjust width as needed */
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            pointer-events: auto; /* Enable clicks on this panel */
+            z-index: 101; /* Ensure it's above the AR scene */
+            text-align: left;
+        }
+
+        #search-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        #search-input {
+            padding: 8px;
+            border-radius: 5px;
+            border: none;
+            width: 100%; /* Full width within the panel */
+            background-color: rgba(255, 255, 255, 0.8);
+            color: black;
+            font-size: 1rem;
+        }
+        
+        #search-button, #show-all-button {
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: none;
+            background-color: rgba(0, 123, 255, 0.8);
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            text-shadow: none;
+        }
+        
+        h1, h2 {
             font-size: 1.5rem;
-            margin: 0;
+            margin: 0 0 10px 0;
         }
 
         p {
-            margin: 5px 0 0 0;
+            margin: 5px 0;
             font-size: 1rem;
         }
+
+        #status-message {
+            margin-top: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .location-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 20px;
+            width: 100%;
+            overflow-y: auto; /* Enable scrolling for long lists */
+        }
+        
+        .location-item {
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .location-item:hover {
+            background-color: rgba(255, 255, 255, 0.4);
+        }
+
     </style>
 
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
     <script>
-        // Data for your campus locations
-        // *** REPLACE THESE COORDINATES WITH YOUR OWN CAMPUS LOCATIONS ***
         const campusLocations = [
-            {
-                name: "Main Building",
-                latitude: 17.561564,
-                longitude: 78.455154
-            },
-            {
-                name: "Library",
-                latitude: 17.562090,
-                longitude: 78.455491
-            },
-            {
-                name: "Cafeteria",
-                latitude: 17.562308,
-                longitude: 78.455895
-            },
-            {
-                name: "CSIT(3rd year)",
-                latitude: 17.560994,
-                longitude: 78.455193
-            }
+            { name: "Main Building", latitude: 17.561564, longitude: 78.455154 },
+            { name: "Library", latitude: 17.562090, longitude: 78.455491 },
+            { name: "Cafeteria", latitude: 17.562308, longitude: 78.455895 },
+            { name: "CSIT(3rd year)", latitude: 17.560994, longitude: 78.455193 }
         ];
 
-        // Haversine formula to calculate distance between two GPS coordinates
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // Earth's radius in meters
+            const R = 6371e3;
             const φ1 = lat1 * Math.PI / 180;
             const φ2 = lat2 * Math.PI / 180;
             const Δφ = (lat2 - lat1) * Math.PI / 180;
             const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-            return R * c; // Distance in meters
+            return R * c;
         }
 
-        // A-Frame component to dynamically place AR entities based on GPS
         AFRAME.registerComponent('ar-entity-loader', {
+            schema: { searchTerm: { type: 'string', default: '' } },
             init: function () {
                 const sceneEl = this.el.sceneEl;
+                const statusMessage = document.getElementById('status-message');
 
-                // Listen for a new GPS position update
                 sceneEl.addEventListener('gps-camera-update-position', (event) => {
                     const userLat = event.detail.position.latitude;
                     const userLon = event.detail.position.longitude;
                     
-                    // Clear existing markers to prevent duplicates
                     const existingEntities = document.querySelectorAll('[gps-new-entity-place]');
                     existingEntities.forEach(el => el.remove());
 
-                    // Loop through all campus locations
-                    campusLocations.forEach(location => {
+                    const term = this.data.searchTerm.trim().toLowerCase();
+                    let locationsToShow = term
+                        ? campusLocations.filter(loc => loc.name.toLowerCase().includes(term))
+                        : campusLocations;
+
+                    if (locationsToShow.length === 0 && term !== '') {
+                        statusMessage.textContent = 'No matching locations found.';
+                    } else {
+                        statusMessage.textContent = '';
+                    }
+
+                    locationsToShow.forEach(location => {
                         const distance = calculateDistance(userLat, userLon, location.latitude, location.longitude);
 
-                        // Only show AR content for locations within 500 meters
                         if (distance < 500) {
-                            // Create a new entity (container for AR objects)
                             const entity = document.createElement('a-entity');
-                            
-                            // Add the AR.js component to place the entity at the real-world coordinates
-                            entity.setAttribute('gps-new-entity-place', {
-                                latitude: location.latitude,
-                                longitude: location.longitude
-                            });
+                            entity.setAttribute('gps-new-entity-place', { latitude: location.latitude, longitude: location.longitude });
 
-                            // Add a text label to the entity
                             const text = document.createElement('a-text');
                             text.setAttribute('value', `${location.name}\n${distance.toFixed(0)}m away`);
                             text.setAttribute('scale', '20 20 20');
@@ -122,18 +173,58 @@
                             text.setAttribute('align', 'center');
                             text.setAttribute('color', 'white');
                             text.setAttribute('background-color', 'rgba(0,0,0,0.5)');
-                            
-                            // The height of the text (adjust as needed)
                             text.setAttribute('position', '0 10 0');
 
                             entity.appendChild(text);
-
-                            // Add the entity to the AR scene
                             sceneEl.appendChild(entity);
                         }
                     });
                 });
             }
+        });
+
+        function renderLocationList(filterTerm = '') {
+            const listEl = document.getElementById('location-list');
+            listEl.innerHTML = ''; // Clear existing list
+
+            const filteredLocations = filterTerm
+                ? campusLocations.filter(loc => loc.name.toLowerCase().includes(filterTerm.toLowerCase()))
+                : campusLocations;
+            
+            filteredLocations.forEach(location => {
+                const listItem = document.createElement('li');
+                listItem.className = 'location-item';
+                listItem.textContent = location.name;
+                listItem.addEventListener('click', () => {
+                    const searchInput = document.getElementById('search-input');
+                    const sceneEl = document.querySelector('a-scene');
+                    searchInput.value = location.name;
+                    sceneEl.setAttribute('ar-entity-loader', { searchTerm: location.name });
+                });
+                listEl.appendChild(listItem);
+            });
+        }
+
+        window.addEventListener('load', () => {
+            const searchInput = document.getElementById('search-input');
+            const searchButton = document.getElementById('search-button');
+            const showAllButton = document.getElementById('show-all-button');
+            const sceneEl = document.querySelector('a-scene');
+
+            // Initial render of the list
+            renderLocationList();
+
+            searchButton.addEventListener('click', () => {
+                const searchTerm = searchInput.value;
+                sceneEl.setAttribute('ar-entity-loader', { searchTerm: searchTerm });
+                renderLocationList(searchTerm);
+            });
+
+            showAllButton.addEventListener('click', () => {
+                searchInput.value = '';
+                sceneEl.setAttribute('ar-entity-loader', { searchTerm: '' });
+                renderLocationList();
+            });
         });
     </script>
 </head>
@@ -146,13 +237,20 @@
         <a-camera gps-new-camera look-controls></a-camera>
     </a-scene>
 
-    <div id="ui-container">
-        <h1>AR Campus Navigator</h1>
+    <div id="left-panel">
+        <h1>Campus Navigator AR</h1>
         <p>Walk around to see AR labels for nearby buildings.</p>
         <p>Ensure your device's GPS and camera are enabled.</p>
+        <div id="search-container">
+            <input type="text" id="search-input" placeholder="Search for a building...">
+            <button id="search-button">Search</button>
+            <button id="show-all-button">Show All</button>
+        </div>
+        <p id="status-message"></p>
+        <hr style="width:100%; border: 1px solid rgba(255,255,255,0.2);">
+        <h2>Campus Locations</h2>
+        <ul class="location-list" id="location-list">
+            </ul>
     </div>
 </body>
-
 </html>
-
-
